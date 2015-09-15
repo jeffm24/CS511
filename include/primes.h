@@ -10,7 +10,7 @@
   Author: Jeff Mariconda
   Class: cs511
 
-  Program to
+  Program that uses child processes to find all of the primes in various ranges of numbers.
 */
-    
+
 #endif
