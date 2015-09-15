@@ -5,7 +5,7 @@ OBJ = $(SRC:.c=.o)
 RM = rm -fv
 
 all:
-	cc -g -I../../include $(SRC) -o $(NAME)
+	gcc -I../../include -Wall -pedantic-errors $(SRC) -o $(NAME)
 
 clean:
 	-$(RM) *~
