@@ -9,6 +9,12 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/select.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <string.h>
 
 /*
   Author: Jeff Mariconda
@@ -18,6 +24,6 @@
 */
 
 //Finds all primes in the given range (inclusive)
-void find_primes(int start, int end);
+int find_primes(int start, int end, int fd);
 
 #endif
