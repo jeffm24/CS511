@@ -59,7 +59,8 @@ int main(int argc, char **argv) {
     int bottom;                     /* bottom of range */
     int top;                        /* top of range */
     int child_count;                /* number of children for parent to keep track of */
-    int i;
+    int read_buff;                  /* int buffer for reading primes from children */
+    int i, n;
     pid_t pid;                      /* pid of the parent/child processes */
     pid_t pid_array[num_args];      /* array of child pids */
     char fifo_name[20];             /* buffer for creating the names for the FIFO's */
@@ -214,12 +215,8 @@ int main(int argc, char **argv) {
 
         FD_ZERO(&read_set);
         for (i = 0 ; i < num_args ; i++) {
-            /*
-            if (read_fds[i] != -1) {
-
-            }
-            */
-            FD_SET(read_fds[i], &read_set);
+            if (read_fds[i] != -1)
+                FD_SET(read_fds[i], &read_set);
         }
 
         ret = select(max_fd + 1, &read_set, NULL, NULL, &timeout);
@@ -238,53 +235,50 @@ int main(int argc, char **argv) {
             /* check which fds were written to */
             for (i = 0 ; i < num_args; i++) {
 
-                if (pid_array[i] == 0)
-                    continue;
+                /* if the file descriptor associated with the child is set, read from it */
+                if (FD_ISSET(read_fds[i], &read_set)) {
 
-                /* printf("checking if child %d has exited\n", pid_array[i]); */
-
-                /* check if child has exited if it hasn't already been confirmed exited */
-                if ((exited_child = waitpid(pid_array[i], &exit_status, WNOHANG)) != 0) {
-                    /* if it has exited, check for errors and, if none, print primes and get exit status */
-
-                    if (exited_child < 0) {
-                        perror("waitpid");
-                        exit(-1);
-                    } else {
-                        int read_buff;
-                        int n;
-
-                        /* read all primes from exited_child and print to screen if there are any */
-                        while (1) {
-                            if ((n = read(read_fds[i], &read_buff, sizeof(int))) < 0) {
+                    /* read all primes from child and print to screen if there are any */
+                    while (1) {
+                        if ((n = read(read_fds[i], &read_buff, sizeof(int))) < 0) {
+                            /* if failed read is just because the file is being used by a child, ignore it */
+                            if (errno != 11) {
                                 perror("read");
                                 exit(-1);
-                            } else if (n > 0) {
-                                printf("%d is prime from %d\n", read_buff, pid_array[i]);
-                            } else {
-                                break;
                             }
+                        } else if (n > 0) {
+                            printf("%d is prime from %d\n", read_buff, pid_array[i]);
+                        } else {
+                            break;
                         }
-
-                        /* remove fifo file if even child */
-                        if ((i + 1) % 2 == 0) {
-                            memset(fifo_name, '\0', 20 * sizeof(char));
-                            sprintf(fifo_name, "fifo%d", i);
-
-                            if (remove((const char*)fifo_name) < 0) {
-                                perror("remove");
-                                exit(-1);
-                            }
-                        }
-
-                        /* decrement child count, "remove" child's associated file descriptor from the read_fds array, and print exit status */
-                        child_count--;
-                        /* read_fds[i] = -1; */
-                        pid_array[i] = 0;
-                        printf("child %d exited correctly and found %d primes\n", (int)exited_child, WEXITSTATUS(exit_status));
                     }
 
+                    /* check if child has exited if it hasn't already been confirmed exited */
+                    if ((exited_child = waitpid(pid_array[i], &exit_status, WNOHANG)) != 0) {
+                        if (exited_child < 0) {
+                            perror("waitpid");
+                            exit(-1);
+                        } else {
+                            /* remove fifo file if even child */
+                            if ((i + 1) % 2 == 0) {
+                                memset(fifo_name, '\0', 20 * sizeof(char));
+                                sprintf(fifo_name, "fifo%d", i);
+
+                                if (remove((const char*)fifo_name) < 0) {
+                                    perror("remove");
+                                    exit(-1);
+                                }
+                            }
+
+                            /* decrement child count, "remove" child's pid from pid_array, and print exit status */
+                            child_count--;
+                            close(read_fds[i]);
+                            read_fds[i] = -1;
+                            printf("child %d exited correctly and found %d primes\n", (int)exited_child, WEXITSTATUS(exit_status));
+                        }
+                    }
                 }
+
             }
         }
     }
