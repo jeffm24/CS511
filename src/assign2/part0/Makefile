@@ -1,13 +1,12 @@
-#Makefile for primes
-NAME = primes
+#Makefile for rw
+NAME = rw
 TARBALL = jmariconda_$(NAME).tar.gz
-SRC = primes.c
-INC = ../../include
+SRC = rw.c
 OBJ = $(SRC:.c=.o)
 RM = rm -fv
 
 all:
-	gcc -ggdb -I$(INC) -Wall -std=c99 -pedantic-errors $(SRC) -o $(NAME)
+	gcc -Wall -std=c99 -pedantic-errors $(SRC) -o $(NAME)
 
 clean:
 	-$(RM) *~
