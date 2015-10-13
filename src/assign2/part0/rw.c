@@ -47,14 +47,16 @@ int main(int argc, char **argv)
 
     /* read lines from input file into buffer and write them to output file */
     while ((read = getline(&buff, &in_len, in_fp)) != -1) {
-        if (read == -1) {
-            perror("getline");
-            exit(-1);
-        }
         if (fwrite(buff, strlen(buff), 1, out_fp) < 0) {
             perror("fwrite");
             exit(-1);
         }
+    }
+
+    /* check if error was thrown from getline */
+    if (errno > 0 && read == -1) {
+        perror("getline");
+        exit(-1);
     }
 
     free(buff);
