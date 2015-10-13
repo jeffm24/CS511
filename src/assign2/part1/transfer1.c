@@ -9,7 +9,7 @@ void *fill_buffer(void *p) {
     size_t in_len = 0;          /* length of the input buffer */
     ssize_t read;               /* ssize_t struct for getting return of getline */
     int done = 0;               /* int to check whether the thread has finished reading input file */
-    int ret = 0;
+    int ret = 0;                /* return code of the thread (0 by default) */
 
     /* try to open input file for reading */
     if ((in_fp = fopen(env.in_name, "r")) == NULL) {
@@ -25,14 +25,6 @@ void *fill_buffer(void *p) {
             break;
         }
 
-        /* wait for semaphore lock */
-        if (sem_wait(&env.lock) < 0) {
-            perror("sem_wait drain_thread");
-            ret = -1;
-            break;
-        }
-        /* --------------------------CRITICAL SECTION-------------------------- */
-
         /* only read next line if temp_buff is set to NULL */
         if (temp_buff == NULL) {
             /* read line from input file into temporary buffer */
@@ -47,33 +39,40 @@ void *fill_buffer(void *p) {
                 /* finished with input file */
                 free(temp_buff);
                 temp_buff = "QUIT";
+                read = 4;
                 done = 1;
             }
         }
 
-        /*
-            If there is enough space in the shared buffer, load the string in from the temp_buff
-            and ready it to read another line from the input file (or break if finished reading)
-        */
-        if (cbuf_space_available() > strlen(temp_buff)) {
-            cbuf_copy_in(temp_buff);
-
-            printf("fill thread: wrote [%s] to buffer (nwritten=%d)\n", temp_buff, (int)strlen(temp_buff));
-
-            if (done == 0) {
-                free(temp_buff);
-                temp_buff = NULL;
-            } else {
-                printf("fill thread: exiting\n");
-                /* release semaphore lock */
-                if (sem_post(&env.lock) < 0) {
-                    perror("sem_post drain_thread");
-                    ret = -1;
-                }
-                break;
-            }
-        } else {
+        /* loop until there is enough free space in shared buffer */
+        while (cbuf_space_available() < read + 1) {
             printf("fill thread: could not write [%s] -- not enough space (%d)\n", temp_buff, cbuf_space_available());
+        }
+
+        /* wait for semaphore lock */
+        if (sem_wait(&env.lock) < 0) {
+            perror("sem_wait drain_thread");
+            ret = -1;
+            break;
+        }
+        /* --------------------------CRITICAL SECTION-------------------------- */
+
+        /* load the string in from the temp_buff and ready it to read another line from the input file (or break if finished reading) */
+        cbuf_copy_in(temp_buff);
+
+        printf("fill thread: wrote [%s] to buffer (nwritten=%d)\n", temp_buff, (int)read);
+
+        if (!done) {
+            free(temp_buff);
+            temp_buff = NULL;
+        } else {
+            printf("fill thread: exiting\n");
+            /* release semaphore lock */
+            if (sem_post(&env.lock) < 0) {
+                perror("sem_post drain_thread");
+                ret = -1;
+            }
+            break;
         }
 
         /* --------------------------CRITICAL SECTION-------------------------- */
@@ -93,11 +92,11 @@ void *fill_buffer(void *p) {
  *  Drains the buffer and writes each line to output file until "QUIT" is read
  */
 void *drain_buffer(void *p) {
-    FILE *out_fp;                                 /* file pointer to output file */
-    size_t len = 32 * sizeof(char);               /* length of temp_buff */
-    size_t read_ret;
-    char *temp_buff = (char*)malloc(len);         /* temp buffer for reading from shared buffer */
-    int ret = 0;
+    FILE *out_fp;                                   /* file pointer to output file */
+    size_t len = 32 * sizeof(char);                 /* length of temp_buff */
+    size_t read_ret;                                /* number of bytes copied out of the shared buffer */
+    char *temp_buff = (char*)malloc(len);           /* temp buffer for reading from shared buffer */
+    int ret = 0;                                    /* return code of the thread * (0 by default) */
 
     /* try to open output file for writing */
     if ((out_fp = fopen(env.out_name, "w")) == NULL) {
@@ -113,6 +112,13 @@ void *drain_buffer(void *p) {
             break;
         }
 
+        /* loop until there is a new string in the shared buffer */
+        while ((read_ret = cbuf_copy_out(temp_buff)) == 0) {
+            printf("drain thread: no new string in buffer\n");
+        }
+
+        printf("drain thread: read [%s] from buffer (nread=%d)\n", temp_buff, (int)(read_ret - 1));
+
         /* wait for semaphore lock */
         if (sem_wait(&env.lock) < 0) {
             perror("sem_wait drain_thread");
@@ -121,27 +127,21 @@ void *drain_buffer(void *p) {
         }
         /* --------------------------CRITICAL SECTION-------------------------- */
 
-        if ((read_ret = cbuf_copy_out(temp_buff)) == 0) {
-            printf("drain thread: no new string in buffer\n");
+        /* if drain thread reads "QUIT" break and exit */
+        if (strcmp(temp_buff, "QUIT") == 0) {
+            printf("drain thread: exiting\n");
+            /* release seamphore lock */
+            if (sem_post(&env.lock) < 0) {
+                perror("sem_post drain_thread");
+                ret = -1;
+            }
+            break;
         } else {
-            printf("drain thread: read [%s] from buffer (nread=%d)\n", temp_buff, (int)strlen(temp_buff));
-
-            /* if drain thread reads "QUIT" break and exit */
-            if (strcmp(temp_buff, "QUIT") == 0) {
-                printf("drain thread: exiting\n");
-                /* release seamphore lock */
-                if (sem_post(&env.lock) < 0) {
-                    perror("sem_post drain_thread");
-                    ret = -1;
-                }
+            /* write from temp buffer to output file */
+            if (fwrite(temp_buff, strlen(temp_buff), 1, out_fp) <= 0) {
+                perror("fwrite");
+                ret = -1;
                 break;
-            } else {
-                /* write from temp buffer to output file */
-                if (fwrite(temp_buff, strlen(temp_buff), 1, out_fp) <= 0) {
-                    perror("fwrite");
-                    ret = -1;
-                    break;
-                }
             }
         }
 
@@ -166,7 +166,7 @@ int main(int argc, char **argv)
     pthread_t fill_thread, drain_thread;
 
     /* check if corrent number of command line args given */
-    if (argc < 3) {
+    if (argc < 5) {
         printf("\nERROR: Invalid arguments. Use: rw [input file name] [output file name]\n");
         exit(-1);
     }
