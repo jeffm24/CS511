@@ -1,4 +1,4 @@
-#include "transfer1.h"
+#include "transfer2.h"
 
 /*
  *  Reads input file and writes each line to the buffer until no lines are left
@@ -10,6 +10,7 @@ void *fill_buffer(void *p) {
     ssize_t read;               /* ssize_t struct for getting return of getline */
     int done = 0;               /* int to signal the thread to stop */
     int ret = 0;                /* return code of the thread (0 by default) */
+    int i;
 
     /* try to open input file for reading */
     if ((in_fp = fopen(env.in_name, "r")) == NULL) {
@@ -39,33 +40,55 @@ void *fill_buffer(void *p) {
                 /* finished with input file */
                 free(temp_buff);
                 temp_buff = "QUIT";
-                read = 5;
+                read = 4;
                 done = 1;
             }
         }
 
-        /* loop until there is enough free space in shared buffer */
-        while (cbuf_space_available() < read + 1) {
-            printf("fill thread: could not write [%s] -- not enough space (%d)\n", temp_buff, cbuf_space_available());
+        /* decrement empty semaphore for every byte to be written */
+        for (i = 0 ; i <= read + 1 ; i++) {
+            if (sem_wait(&env.empty) < 0) {
+                perror("sem_wait fill_thread empty");
+
+                ret = -1;
+                fclose(in_fp);
+                pthread_exit(&ret);
+            }
         }
 
         /* wait for semaphore lock */
         if (sem_wait(&env.lock) < 0) {
-            perror("sem_wait drain_thread");
+            perror("sem_wait fill_thread lock");
             ret = -1;
             break;
         }
         /* --------------------------CRITICAL SECTION-------------------------- */
 
-        /* load the string in from the temp_buff */
-        cbuf_copy_in(temp_buff);
+        /* check if there is enough free space in shared buffer */
+        if (cbuf_space_available() >= read + 1) {
+            /* load the string in from the temp_buff */
+            cbuf_copy_in(temp_buff);
+        } else {
+            printf("fill thread: could not write [%s] -- not enough space (%d)\n", temp_buff, cbuf_space_available());
+        }
 
         /* --------------------------CRITICAL SECTION-------------------------- */
         /* release semaphore lock */
         if (sem_post(&env.lock) < 0) {
-            perror("sem_post drain_thread");
+            perror("sem_post fill_thread lock");
             ret = -1;
             break;
+        }
+
+        /* increment full semaphore for every byte written */
+        for (i = 0 ; i <= read + 1 ; i++) {
+            if (sem_post(&env.full) < 0) {
+                perror("sem_post fill_thread full");
+
+                ret = -1;
+                fclose(in_fp);
+                pthread_exit(&ret);
+            }
         }
 
         printf("fill thread: wrote [%s] to buffer (nwritten=%d)\n", temp_buff, (int)(read + 1));
@@ -95,6 +118,7 @@ void *drain_buffer(void *p) {
     char *temp_buff = (char*)malloc(len);           /* temp buffer for reading from shared buffer */
     int done = 0;                                   /* int to signal the thread to stop */
     int ret = 0;                                    /* return code of the thread * (0 by default) */
+    int i;
 
     /* try to open output file for writing */
     if ((out_fp = fopen(env.out_name, "w")) == NULL) {
@@ -110,20 +134,36 @@ void *drain_buffer(void *p) {
             break;
         }
 
-        /* loop until there is a new string in the shared buffer */
-        while ((read_ret = cbuf_copy_out(temp_buff)) == 0) {
-            printf("drain thread: no new string in buffer\n");
+        /* initial sem_wait to see if there is anything in the buffer */
+        if (sem_wait(&env.full) < 0) {
+            perror("sem_wait drain_thread full");
+            ret = -1;
+            break;
         }
-
-        printf("drain thread: read [%s] from buffer (nread=%d)\n", temp_buff, (int)read_ret);
 
         /* wait for semaphore lock */
         if (sem_wait(&env.lock) < 0) {
-            perror("sem_wait drain_thread");
+            perror("sem_wait drain_thread lock");
             ret = -1;
             break;
         }
         /* --------------------------CRITICAL SECTION-------------------------- */
+
+        /* read string out of shared buffer */
+        read_ret = cbuf_copy_out(temp_buff);
+
+        /* decrement full semaphore for the rest of the bytes read */
+        for (i = 0 ; i < read_ret ; i++) {
+            if (sem_wait(&env.full) < 0) {
+                perror("sem_wait drain_thread full");
+
+                ret = -1;
+                fclose(out_fp);
+                pthread_exit(&ret);
+            }
+        }
+
+        printf("drain thread: read [%s] from buffer (nread=%d)\n", temp_buff, (int)read_ret);
 
         /* if drain thread reads "QUIT" break and exit */
         if (strcmp(temp_buff, "QUIT") == 0) {
@@ -145,6 +185,17 @@ void *drain_buffer(void *p) {
             break;
         }
 
+        /* increment empty semaphore for every byte read from buffer */
+        for (i = 0 ; i <= read_ret ; i++) {
+            if (sem_post(&env.empty) < 0) {
+                perror("sem_wait fill_thread empty");
+
+                ret = -1;
+                fclose(out_fp);
+                pthread_exit(&ret);
+            }
+        }
+
         if (done) {
             break;
         }
@@ -157,7 +208,7 @@ void *drain_buffer(void *p) {
 }
 
 /*
- *  Runs the transfer1 program.
+ *  Runs the transfer2 program.
  */
 int main(int argc, char **argv)
 {
@@ -177,14 +228,22 @@ int main(int argc, char **argv)
 
     printf("fill sleep: %lu\ndrain sleep: %lu\n", (long int)env.fill_sleep, (long int)env.drain_sleep);
 
-    /* initialize semaphore lock */
-    if (sem_init(&env.lock, 0, 1) < 0) {
-        perror("sem_init");
-        exit(-1);
-    }
-
     /* initialize shared buffer */
     cbuf_init();
+
+    /* initialize semaphores */
+    if (sem_init(&env.lock, 0, 1) < 0) {
+        perror("sem_init lock");
+        exit(-1);
+    }
+    if (sem_init(&env.full, 0, 0) < 0) {
+        perror("sem_init full");
+        exit(-1);
+    }
+    if (sem_init(&env.empty, 0, cbuf_space_available()) < 0) {
+        perror("sem_init empty");
+        exit(-1);
+    }
 
     /* create threads */
     pthread_create(&fill_thread, NULL, fill_buffer, NULL);
@@ -200,9 +259,17 @@ int main(int argc, char **argv)
         exit(-1);
     }
 
-    /* destroy semaphore lock once threads are finished */
+    /* destroy semaphores once threads are finished */
     if (sem_destroy(&env.lock) < 0) {
-        perror("sem_destroy");
+        perror("sem_destroy lock");
+        exit(-1);
+    }
+    if (sem_destroy(&env.full) < 0) {
+        perror("sem_destroy full");
+        exit(-1);
+    }
+    if (sem_destroy(&env.empty) < 0) {
+        perror("sem_destroy empty");
         exit(-1);
     }
 

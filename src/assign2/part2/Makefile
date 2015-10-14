@@ -1,12 +1,12 @@
-#Makefile for transfer1
-NAME = transfer1
+#Makefile for transfer2
+NAME = transfer2
 TARBALL = jmariconda_$(NAME).tar.gz
-SRC = transfer1.c cbuf.c
+SRC = transfer2.c cbuf.c
 OBJ = $(SRC:.c=.o)
 RM = rm -fv
 
 all:
-	gcc -Wall -std=c99 -pedantic-errors $(SRC) -o $(NAME) -lpthread
+	gcc -g -Wall -std=c99 -pedantic-errors $(SRC) -o $(NAME) -lpthread
 
 clean:
 	-$(RM) *~
