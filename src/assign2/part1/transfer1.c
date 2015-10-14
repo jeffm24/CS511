@@ -39,7 +39,7 @@ void *fill_buffer(void *p) {
                 /* finished with input file */
                 free(temp_buff);
                 temp_buff = "QUIT";
-                read = 5;
+                read = 4;
                 done = 1;
             }
         }

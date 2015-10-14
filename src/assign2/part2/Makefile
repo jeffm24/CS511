@@ -6,7 +6,7 @@ OBJ = $(SRC:.c=.o)
 RM = rm -fv
 
 all:
-	gcc -g -Wall -std=c99 -pedantic-errors $(SRC) -o $(NAME) -lpthread
+	gcc -Wall -std=c99 -pedantic-errors $(SRC) -o $(NAME) -lpthread
 
 clean:
 	-$(RM) *~
