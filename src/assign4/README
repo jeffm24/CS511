@@ -1,0 +1,9 @@
+To compile and run each part:
+- cd inside of the corresponding part* directory
+- run to compile:
+
+	javac -d bin/ *.java
+
+- run to run the program:
+
+	java -classpath bin/ TokenCount <numPages> ../input.xml

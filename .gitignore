@@ -12,3 +12,9 @@
 
 #ignore binaries
 primes
+
+#ignore .class files
+*.class
+
+#ignore tar.gz submissons
+*.tar.gz
