@@ -1,3 +1,6 @@
+%%  Author: Jeff Mariconda
+%%  Class: CS511
+
 -module(watcher).
 -export([watcher_thread/2]).
 

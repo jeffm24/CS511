@@ -1,0 +1,4 @@
+To run the Watcher/Sensor simulator:
+1) compile sim.erl, watcher.erl, and sensor.erl using erlc or c() in the erl shell.
+2) run the following in the erl shell:
+       sim:start_sim(<NumSensors>)

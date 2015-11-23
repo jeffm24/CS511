@@ -1,3 +1,6 @@
+%%  Author: Jeff Mariconda
+%%  Class: CS511
+
 -module(sensor).
 -export([sensor_thread/2]).
 

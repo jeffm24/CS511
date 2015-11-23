@@ -1,3 +1,6 @@
+%%  Author: Jeff Mariconda
+%%  Class: CS511
+
 -module(sim).
 -export([start_sim/1]).
 
