@@ -13,10 +13,10 @@ sensor_thread(WatcherPid, SensorID) ->
     %% else report Measurement
     if
         Measurement == 11 ->
-            WatcherPid ! {self(), SensorID, "anomalous_reading"},
+            WatcherPid ! {SensorID, "anomalous_reading"},
             exit(crash);
         true ->
-            WatcherPid ! {self(), SensorID, Measurement}
+            WatcherPid ! {SensorID, Measurement}
     end,
 
     %% sleep for random amount of time and then recurse

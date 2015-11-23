@@ -25,10 +25,11 @@ create_sensors(CurrSensorID, SensorIDEnd, SensorList) when CurrSensorID =< Senso
 print_sensors(Sensors) ->
     io:fwrite("Watcher ~p watching: ~p~n~n", [self(), Sensors]).
 
-%%
+%%  Loop to recieve reports from watched sensors.
+%%      Sensors - list containing the {SensorID, Pid} tuples for all of the sensors that this watcher is keeping track of
 watch_loop(Sensors) ->
     receive
-        {SensorPid, SensorID, Report} ->
+        {SensorID, Report} ->
             if
                 Report == "anomalous_reading" ->
                     %% if a crash was reported print the crash report, spawn a new sensor thread for that SensorID,
@@ -38,12 +39,11 @@ watch_loop(Sensors) ->
                     {Pid, _} = spawn_monitor(sensor, sensor_thread, [self(), SensorID]),
 
                     %% filter the Sensors list to find the element to be deleted
-                    %%Elem = lists:last(lists:filter(fun({StoredSid, _}) ->
-                    %%                                    StoredSid == SensorID
-                    %%                               end, Sensors)),
+                    Elem = lists:last(lists:filter(fun({StoredSid, _}) ->
+                                                        StoredSid == SensorID
+                                                   end, Sensors)),
 
-                    %%io:fwrite("Watcher ~p: Removing Element ~p~n", [self(), Elem]),
-                    NewSensorsList = lists:append( lists:delete({SensorID, SensorPid}, Sensors), [{SensorID, Pid}] ),
+                    NewSensorsList = lists:append( lists:delete(Elem, Sensors), [{SensorID, Pid}] ),
                     print_sensors(NewSensorsList);
                 true ->
                     %% print measurement report if no crash was reported
